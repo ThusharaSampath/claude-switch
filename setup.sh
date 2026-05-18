@@ -24,6 +24,7 @@ ZSHRC_BEGIN="# >>> claude-switch >>>"
 ZSHRC_END="# <<< claude-switch <<<"
 
 require_macos
+require_python3
 
 # ----------------------------------------------------------------------------
 # Step 1: ensure each profile slot has a saved token.
@@ -45,6 +46,15 @@ save_active_to_profile() {
   write_slot "$slot" "$blob"
   local tier; tier=$(token_tier "$blob")
   ok "Saved current token to '$slot' (subscription: $tier)"
+
+  # Also snapshot the oauthAccount block from ~/.claude.json so the switcher
+  # can restore identity (/status banner) along with the token.
+  if save_snapshot "$profile" 2>/dev/null; then
+    ok "Saved identity snapshot for '$profile' ($(snapshot_summary "$profile"))"
+  else
+    warn "Could not snapshot oauthAccount from $CLAUDE_JSON for '$profile'."
+    info "${C_DIM}The token swap will still work, but /status may show stale identity until the snapshot is captured.${C_RST}"
+  fi
 }
 
 prompt_yn() {
@@ -56,23 +66,31 @@ prompt_yn() {
 }
 
 setup_profiles() {
-  step "Saving profile tokens"
+  step "Saving profile tokens and identity snapshots"
   local p slot need_capture=()
 
-  # Survey what's already saved
+  # Survey what's already saved. A profile is "complete" only when both the
+  # Keychain token AND the oauthAccount snapshot are present.
   for p in "${PROFILES[@]}"; do
     slot=$(slot_name "$p")
-    if slot_exists "$slot"; then
+    local has_token=0 has_snap=0
+    slot_exists "$slot" && has_token=1
+    snapshot_exists "$p" && has_snap=1
+
+    if (( has_token && has_snap )); then
       local blob; blob=$(read_slot "$slot")
       local tier; tier=$(token_tier "$blob")
-      ok "$p already saved ${C_DIM}(slot=$slot, tier=$tier)${C_RST}"
+      ok "$p already saved ${C_DIM}(tier=$tier, identity=$(snapshot_summary "$p"))${C_RST}"
     else
       need_capture+=("$p")
+      if (( has_token && ! has_snap )); then
+        info "$p has saved token but no identity snapshot — will capture."
+      fi
     fi
   done
 
   if [[ ${#need_capture[@]} -eq 0 ]]; then
-    info "All profiles already have saved tokens. Skipping capture."
+    info "All profiles already have saved tokens and snapshots. Skipping capture."
     return 0
   fi
 
@@ -111,11 +129,11 @@ EOF
   step "Verification"
   for p in "${PROFILES[@]}"; do
     slot=$(slot_name "$p")
-    if slot_exists "$slot"; then
-      ok "$p  ${C_DIM}($slot)${C_RST}"
-    else
-      err "$p  ${C_DIM}($slot) — still missing${C_RST}"
-    fi
+    local token_mark="${C_RED}MISSING${C_RST}"
+    local snap_mark="${C_RED}MISSING${C_RST}"
+    slot_exists "$slot" && token_mark="${C_GRN}ok${C_RST}"
+    snapshot_exists "$p" && snap_mark="${C_GRN}ok${C_RST}"
+    info "  $p  token=$token_mark  snapshot=$snap_mark"
   done
 }
 
@@ -135,28 +153,33 @@ alias ccs-work="\$CLAUDE_SWITCH_DIR/switch.sh work"
 alias ccs-status="\$CLAUDE_SWITCH_DIR/switch.sh --status"
 alias ccs-list="\$CLAUDE_SWITCH_DIR/switch.sh --list"
 
-# Launch claude as a given profile. Syncs any refreshed token back on exit
-# so the profile's saved slot stays current.
+# Launch claude as a given profile. Swap token+identity via switch.sh, run
+# claude, then sync refreshed token + identity snapshot back to the profile.
 _claude_switch() {
   local profile="\$1"; shift
   local slot="Claude Code-\$profile"
-  local token
-  token=\$(security find-generic-password -s "\$slot" -w 2>/dev/null) || {
-    echo "No saved token for profile '\$profile'. Run \$CLAUDE_SWITCH_DIR/setup.sh"
-    return 1
-  }
-  security delete-generic-password -s "Claude Code-credentials" >/dev/null 2>&1
-  security add-generic-password -s "Claude Code-credentials" -a "\$USER" -w "\$token"
+
+  # Use switch.sh to swap Keychain token and restore identity in claude.json
+  "\$CLAUDE_SWITCH_DIR/switch.sh" "\$profile" >/dev/null || return 1
+
+  local token_before
+  token_before=\$(security find-generic-password -s "Claude Code-credentials" -w 2>/dev/null)
 
   command claude "\$@"
   local rc=\$?
 
-  local updated
-  updated=\$(security find-generic-password -s "Claude Code-credentials" -w 2>/dev/null)
-  if [[ -n "\$updated" && "\$updated" != "\$token" ]]; then
+  # Sync any refreshed token back to the profile slot
+  local token_after
+  token_after=\$(security find-generic-password -s "Claude Code-credentials" -w 2>/dev/null)
+  if [[ -n "\$token_after" && "\$token_after" != "\$token_before" ]]; then
     security delete-generic-password -s "\$slot" >/dev/null 2>&1
-    security add-generic-password -s "\$slot" -a "\$USER" -w "\$updated"
+    security add-generic-password -s "\$slot" -a "\$USER" -w "\$token_after"
   fi
+
+  # Refresh the identity snapshot — claude may have updated org/email/seat
+  # info in ~/.claude.json during the session.
+  ( cd "\$CLAUDE_SWITCH_DIR" && . ./lib.sh && save_snapshot "\$profile" ) >/dev/null 2>&1 || true
+
   return \$rc
 }
 alias claude-personal='_claude_switch personal'
