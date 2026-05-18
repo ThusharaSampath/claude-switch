@@ -114,7 +114,7 @@ cmd_switch() {
   # /status, the launch banner, and any cached identity match the new token.
   snap_path=$(snapshot_path "$target")
   if [[ -s "$snap_path" ]]; then
-    if write_oauth_account "$(cat "$snap_path")"; then
+    if write_oauth_account_from_file "$snap_path"; then
       ok "Switched to ${C_GRN}$target${C_RST} (subscription: $tier) — identity restored: $(snapshot_summary "$target")"
     else
       warn "Switched token to '$target' but failed to update $CLAUDE_JSON; /status may show stale identity."

@@ -154,7 +154,8 @@ alias ccs-status="\$CLAUDE_SWITCH_DIR/switch.sh --status"
 alias ccs-list="\$CLAUDE_SWITCH_DIR/switch.sh --list"
 
 # Launch claude as a given profile. Swap token+identity via switch.sh, run
-# claude, then sync refreshed token + identity snapshot back to the profile.
+# claude, then refresh the profile slot only if it's safe (no mid-air
+# switch to a different account happened during the session).
 _claude_switch() {
   local profile="\$1"; shift
   local slot="Claude Code-\$profile"
@@ -162,23 +163,33 @@ _claude_switch() {
   # Use switch.sh to swap Keychain token and restore identity in claude.json
   "\$CLAUDE_SWITCH_DIR/switch.sh" "\$profile" >/dev/null || return 1
 
-  local token_before
-  token_before=\$(security find-generic-password -s "Claude Code-credentials" -w 2>/dev/null)
-
   command claude "\$@"
   local rc=\$?
 
-  # Sync any refreshed token back to the profile slot
-  local token_after
-  token_after=\$(security find-generic-password -s "Claude Code-credentials" -w 2>/dev/null)
-  if [[ -n "\$token_after" && "\$token_after" != "\$token_before" ]]; then
-    security delete-generic-password -s "\$slot" >/dev/null 2>&1
-    security add-generic-password -s "\$slot" -a "\$USER" -w "\$token_after"
-  fi
+  # Sync any refreshed token back to the profile slot, but ONLY if the
+  # active slot still represents this profile. If a mid-air ccs-* switch
+  # changed the active account during our session, writing it back would
+  # clobber a different profile's token (and lose its refresh token).
+  ( cd "\$CLAUDE_SWITCH_DIR" && . ./lib.sh
+    saved_active=\$(read_slot "\$ACTIVE_SLOT") || exit 0
+    saved_profile=\$(read_slot "\$slot")        || exit 0
+    [[ -z "\$saved_active" || -z "\$saved_profile" ]] && exit 0
 
-  # Refresh the identity snapshot — claude may have updated org/email/seat
-  # info in ~/.claude.json during the session.
-  ( cd "\$CLAUDE_SWITCH_DIR" && . ./lib.sh && save_snapshot "\$profile" ) >/dev/null 2>&1 || true
+    # Compare refresh tokens — they're stable across access-token refreshes
+    # but differ between accounts. If they match, this is a refresh of the
+    # same account and it's safe to update the profile slot.
+    refresh_active=\$(printf "%s" "\$saved_active"  | python3 -c 'import sys,json; print(json.load(sys.stdin).get("claudeAiOauth",{}).get("refreshToken",""))')
+    refresh_saved=\$(printf "%s"  "\$saved_profile" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("claudeAiOauth",{}).get("refreshToken",""))')
+
+    if [[ -n "\$refresh_active" && "\$refresh_active" == "\$refresh_saved" ]]; then
+      if [[ "\$saved_active" != "\$saved_profile" ]]; then
+        # Same account, but access token changed (refresh happened) — update.
+        write_slot "\$slot" "\$saved_active"
+      fi
+      # Refresh identity snapshot too
+      save_snapshot "\$profile" >/dev/null 2>&1 || true
+    fi
+  ) >/dev/null 2>&1 || true
 
   return \$rc
 }

@@ -2,97 +2,73 @@
 
 Fast, non-interactive switching between multiple Claude Code accounts (e.g. personal and work) on macOS.
 
-Claude Code stores its OAuth credentials in the macOS Keychain under a single fixed entry (`Claude Code-credentials`). That means `CLAUDE_CONFIG_DIR` alone can't separate accounts — both configs end up reading the same token. This tool works around that by saving each account's full OAuth token (access + refresh) to its own Keychain slot, and swapping the active slot on demand.
-
-Once both slots are saved, switching is fully non-interactive — no re-login, no browser prompt. The refresh token in each saved slot keeps the account authenticated indefinitely.
+After a one-time setup, swap accounts with a single shell alias — no `/logout`, no browser, no re-auth.
 
 ## Requirements
 
-- macOS (uses `security` CLI for Keychain access)
-- zsh (the setup writes aliases to `~/.zshrc`)
-- Claude Code already installed and logged into at least one account
-- Python 3 (preinstalled on macOS; only used to display the subscription tier in `ccs-status` / `ccs-list` — switching itself works without it)
+- macOS
+- zsh
+- Claude Code installed, logged into at least one account
+- Python 3 (preinstalled on macOS)
 
-## One-time setup
+## Setup
 
 ```bash
 ./setup.sh
-```
-
-The script:
-
-1. Saves the currently-active OAuth token to a per-profile Keychain slot.
-2. For any profile not yet saved, walks you through logging into that account in Claude (`/logout` → `/login`) and captures the token afterwards.
-3. Appends a managed block to `~/.zshrc` with the aliases below.
-
-Re-running is safe — it skips already-saved slots and replaces the existing `~/.zshrc` block instead of duplicating it.
-
-After setup, reload your shell:
-
-```bash
 source ~/.zshrc
 ```
 
-## Aliases installed
+The script saves each account's OAuth token + identity to per-profile Keychain slots and installs aliases. Safe to re-run.
 
-| Alias              | Action                                                                                  |
-| ------------------ | --------------------------------------------------------------------------------------- |
-| `claude-personal`  | Swap Keychain token to personal, **launch** `claude`, then sync any refreshed token back |
-| `claude-work`      | Swap Keychain token to work,     **launch** `claude`, then sync any refreshed token back |
-| `ccs-personal`     | Mid-air switch to personal (swap token only, no launch)                                 |
-| `ccs-work`         | Mid-air switch to work     (swap token only, no launch)                                 |
-| `ccs-status`       | Show which profile is currently active                                                  |
-| `ccs-list`         | List all saved profile slots and their subscription tier                                |
+## Aliases
 
-### When to use which
+| Alias              | Action                                              |
+| ------------------ | --------------------------------------------------- |
+| `claude-personal`  | Swap to personal **and launch** `claude`            |
+| `claude-work`      | Swap to work **and launch** `claude`                |
+| `ccs-personal`     | Mid-air swap to personal (no launch)                |
+| `ccs-work`         | Mid-air swap to work (no launch)                    |
+| `ccs-status`       | Show currently active profile                       |
+| `ccs-list`         | List all saved profiles                             |
 
-- `claude-personal` / `claude-work` — starting a new Claude session as a specific account. The token-refresh sync after exit keeps the profile slot's refresh token current.
-- `ccs-personal` / `ccs-work` — you've got Claude running and want subsequent `claude` invocations (in other terminals, or after restart) to use a different account. Existing running sessions keep the token they loaded at startup; restart them to pick up the new account.
+## Important limitation: mid-air switches don't affect running sessions
 
-## How it works
+A running Claude session loads its OAuth token **into memory at startup** and never re-reads it. So:
 
-Three Keychain slots:
+- `ccs-personal` while a work session is open → that session keeps billing **work** until you exit, even though `/status` shows personal.
+- If work hits its rate limit, you **cannot** mid-air switch and keep going — the running process is stuck on the old token.
 
-- `Claude Code-credentials` — the live slot Claude reads. Always reflects the *currently active* account.
-- `Claude Code-personal`   — saved snapshot of the personal account token.
-- `Claude Code-work`       — saved snapshot of the work account token.
+**The pattern that works:**
 
-Switching = copy a snapshot slot into the live slot. That's it. The access token (~8h lifetime) and refresh token (long-lived) come along for the ride.
+```bash
+# In the stuck session:
+/exit
 
-When Claude refreshes the access token in-process, it writes the new token back to `Claude Code-credentials`. The `_claude_switch` shell function (used by `claude-personal` / `claude-work`) detects this on exit and syncs the refreshed token back to the profile slot so backups stay current.
+# Then:
+ccs-personal
+claude -c          # continues the same conversation, now billing personal
+```
+
+`ccs-*` swaps take effect on the **next** `claude` invocation. Already-running sessions need a restart.
 
 ## Status line integration
 
-The companion [`ccstatus-go`](../ccstatus-go) status line includes an `account` component that detects which profile is active and renders a colored label (cyan `personal` / magenta `work`). It reads the Keychain via the same slot scheme.
-
-The component caches detection for 60s per session (configurable via `providers.account.cache.ttl` in `ccstatus.yaml`). After a mid-air `ccs-*` switch, statuslines in already-running sessions take up to 60s to reflect the change; new sessions pick it up immediately.
-
-## Files
-
-- `setup.sh`  — interactive one-time setup
-- `switch.sh` — non-interactive switcher (the `ccs-*` aliases call this)
-- `lib.sh`    — shared helpers (Keychain read/write, color output, profile detection)
+The companion [`ccstatus-go`](../ccstatus-go) shows the active profile in the status line (cyan `personal` / magenta `work`). Cached for 60s by default.
 
 ## Customising
 
-Profiles are hardcoded as `personal` and `work` in both scripts. To add or rename profiles, edit the `PROFILES=(...)` line near the top of `setup.sh` and `switch.sh`, then re-run `setup.sh`.
-
-The Keychain service name prefix and active-slot name are overridable via environment variables (see `lib.sh`):
-
-```bash
-ACTIVE_SLOT="Claude Code-credentials"   # the live slot
-PROFILE_SLOT_PREFIX="Claude Code-"      # joined with profile name
-```
+Profiles are hardcoded as `personal` and `work`. To add or rename, edit `PROFILES=(...)` in `setup.sh` and `switch.sh`, then re-run setup.
 
 ## Reverting
 
 ```bash
-# Remove the managed block from ~/.zshrc:
+# Remove aliases:
 sed -i '' '/^# >>> claude-switch >>>$/,/^# <<< claude-switch <<<$/d' ~/.zshrc
 
-# Delete the saved snapshots (the live slot is left alone):
+# Delete saved tokens (the live slot is left alone):
 security delete-generic-password -s "Claude Code-personal"
 security delete-generic-password -s "Claude Code-work"
+rm -rf ~/.config/claude-switch
 ```
 
-A backup of your original `~/.zshrc` is at `~/.zshrc.pre-claude-switch.bak` (created by the initial install).
+A backup of your original `~/.zshrc` is at `~/.zshrc.pre-claude-switch.bak`.

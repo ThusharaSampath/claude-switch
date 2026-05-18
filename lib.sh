@@ -104,15 +104,18 @@ json.dump(oa, sys.stdout, sort_keys=True, indent=2)
 
 # Replace the oauthAccount block in ~/.claude.json with the given JSON content.
 # Writes atomically (temp file + rename). Returns non-zero on any failure.
-write_oauth_account() {
-  local new_block="$1"
+# Reads the new block from $1 (a file path) to avoid heredoc/stdin collision.
+write_oauth_account_from_file() {
+  local src="$1"
   [[ -f "$CLAUDE_JSON" ]] || { err "$CLAUDE_JSON not found"; return 1; }
-  [[ -n "$new_block" ]] || { err "Refusing to write empty oauthAccount block"; return 1; }
+  [[ -s "$src" ]] || { err "Refusing to write empty oauthAccount block"; return 1; }
 
-  python3 - "$CLAUDE_JSON" <<'PYEOF'
+  CLAUDE_SWITCH_NEW_BLOCK_FILE="$src" python3 - "$CLAUDE_JSON" <<'PYEOF'
 import json, os, sys, tempfile
 path = sys.argv[1]
-new_block = json.loads(sys.stdin.read())
+src = os.environ["CLAUDE_SWITCH_NEW_BLOCK_FILE"]
+with open(src) as f:
+    new_block = json.load(f)
 with open(path) as f:
     data = json.load(f)
 data["oauthAccount"] = new_block
