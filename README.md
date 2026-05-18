@@ -11,6 +11,7 @@ Once both slots are saved, switching is fully non-interactive — no re-login, n
 - macOS (uses `security` CLI for Keychain access)
 - zsh (the setup writes aliases to `~/.zshrc`)
 - Claude Code already installed and logged into at least one account
+- Python 3 (preinstalled on macOS; only used to display the subscription tier in `ccs-status` / `ccs-list` — switching itself works without it)
 
 ## One-time setup
 
