@@ -59,16 +59,12 @@ The companion [`ccstatus-go`](../ccstatus-go) shows the active profile in the st
 
 Profiles are hardcoded as `personal` and `work`. To add or rename, edit `PROFILES=(...)` in `setup.sh` and `switch.sh`, then re-run setup.
 
-## Reverting
+## Uninstall
 
 ```bash
-# Remove aliases:
-sed -i '' '/^# >>> claude-switch >>>$/,/^# <<< claude-switch <<<$/d' ~/.zshrc
-
-# Delete saved tokens (the live slot is left alone):
-security delete-generic-password -s "Claude Code-personal"
-security delete-generic-password -s "Claude Code-work"
-rm -rf ~/.config/claude-switch
+./clean.sh
 ```
 
-A backup of your original `~/.zshrc` is at `~/.zshrc.pre-claude-switch.bak`.
+Removes the saved Keychain slots, snapshot files, and the managed block in `~/.zshrc`, then restores `~/.claude.json` from the pre-install backup. The currently-active login (`Claude Code-credentials`) is left alone so you stay signed in.
+
+Flags: `--yes` to skip the confirmation prompt, `--no-restore` to leave `~/.claude.json` as-is.

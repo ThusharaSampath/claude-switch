@@ -22,9 +22,32 @@ PROFILES=("personal" "work")
 ZSHRC="${ZSHRC:-$HOME/.zshrc}"
 ZSHRC_BEGIN="# >>> claude-switch >>>"
 ZSHRC_END="# <<< claude-switch <<<"
+ZSHRC_BAK="${ZSHRC}.pre-claude-switch.bak"
+CLAUDE_JSON_BAK="${CLAUDE_JSON}.pre-claude-switch.bak"
 
 require_macos
 require_python3
+
+# ----------------------------------------------------------------------------
+# Step 0: take one-shot backups of files we'll modify, so clean.sh can revert.
+# ----------------------------------------------------------------------------
+
+take_backups() {
+  step "Pre-install backups"
+  if [[ -f "$ZSHRC" && ! -f "$ZSHRC_BAK" ]]; then
+    cp "$ZSHRC" "$ZSHRC_BAK"
+    ok "Backed up $ZSHRC → $ZSHRC_BAK"
+  elif [[ -f "$ZSHRC_BAK" ]]; then
+    info "$ZSHRC_BAK already exists, keeping original backup."
+  fi
+
+  if [[ -f "$CLAUDE_JSON" && ! -f "$CLAUDE_JSON_BAK" ]]; then
+    cp "$CLAUDE_JSON" "$CLAUDE_JSON_BAK"
+    ok "Backed up $CLAUDE_JSON → $CLAUDE_JSON_BAK"
+  elif [[ -f "$CLAUDE_JSON_BAK" ]]; then
+    info "$CLAUDE_JSON_BAK already exists, keeping original backup."
+  fi
+}
 
 # ----------------------------------------------------------------------------
 # Step 1: ensure each profile slot has a saved token.
@@ -62,7 +85,8 @@ prompt_yn() {
   local hint="[Y/n]"; [[ "$default" == "n" ]] && hint="[y/N]"
   read -r -p "$prompt $hint " ans
   ans="${ans:-$default}"
-  [[ "${ans,,}" == "y" || "${ans,,}" == "yes" ]]
+  ans=$(printf '%s' "$ans" | tr '[:upper:]' '[:lower:]')
+  [[ "$ans" == "y" || "$ans" == "yes" ]]
 }
 
 setup_profiles() {
@@ -242,6 +266,7 @@ main() {
   info "Profile slots will be stored in macOS Keychain as 'Claude Code-<profile>'."
   info "Configured profiles: ${PROFILES[*]}"
 
+  take_backups
   setup_profiles
   install_zshrc
 
