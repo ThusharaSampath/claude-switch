@@ -33,10 +33,7 @@ The script saves each account's OAuth token + identity to per-profile Keychain s
 
 ## Important limitation: mid-air switches don't affect running sessions
 
-A running Claude session loads its OAuth token **into memory at startup** and never re-reads it. So:
-
-- `ccs-personal` while a work session is open → that session keeps billing **work** until you exit, even though `/status` shows personal.
-- If work hits its rate limit, you **cannot** mid-air switch and keep going — the running process is stuck on the old token.
+A running Claude session loads its OAuth token **into memory at startup** and never re-reads it. So, `ccs-personal` while a work session is open → that session keeps billing **work** until you exit, even though `/status` shows personal.
 
 **The pattern that works:**
 
@@ -49,12 +46,6 @@ ccs-personal
 claude -c          # continues the same conversation, now billing personal
 ```
 
-`ccs-*` swaps take effect on the **next** `claude` invocation. Already-running sessions need a restart.
-
-## Status line integration
-
-The companion [`ccstatus-go`](../ccstatus-go) shows the active profile in the status line (cyan `personal` / magenta `work`). Cached for 60s by default.
-
 ## Customising
 
 Profiles are hardcoded as `personal` and `work`. To add or rename, edit `PROFILES=(...)` in `setup.sh` and `switch.sh`, then re-run setup.
@@ -65,6 +56,10 @@ Profiles are hardcoded as `personal` and `work`. To add or rename, edit `PROFILE
 ./clean.sh
 ```
 
-Removes the saved Keychain slots, snapshot files, and the managed block in `~/.zshrc`, then restores `~/.claude.json` from the pre-install backup. The currently-active login (`Claude Code-credentials`) is left alone so you stay signed in.
+Removes the saved Keychain slots, snapshot files, and the managed block in `~/.zshrc`, then restores `~/.claude.json` from the pre-install backup. The currently-active login (`Claude Code-credentials`) is left alone, so you stay signed in.
 
 Flags: `--yes` to skip the confirmation prompt, `--no-restore` to leave `~/.claude.json` as-is.
+
+## Status line integration
+
+The companion [`ccstatus-go`](https://github.com/Mirage20/ccstatus-go) will show the active profile in the status line after https://github.com/Mirage20/ccstatus-go/pull/2 this PR is merged. (cyan `personal` / magenta `work`). Cached for 60s by default.
