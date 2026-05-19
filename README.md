@@ -64,4 +64,4 @@ Flags: `--yes` to skip the confirmation prompt, `--no-restore` to leave `~/.clau
 
 ## Status line integration
 
-The companion [`ccstatus-go`](https://github.com/Mirage20/ccstatus-go) will show the active profile in the status line after https://github.com/Mirage20/ccstatus-go/pull/2 this PR is merged. (cyan `personal` / magenta `work`). Cached for 60s by default.
+The companion [`ccstatus-go`](https://github.com/Mirage20/ccstatus-go) will show the active profile in the status line; check it out. (cyan `personal` / magenta `work`). Cached for 60s by default.
