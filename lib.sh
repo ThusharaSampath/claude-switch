@@ -28,6 +28,34 @@ require_macos() {
   fi
 }
 
+# Detect the user's interactive shell and the rc file claude-switch should
+# manage. Honors $CLAUDE_SWITCH_SHELL (values: zsh, bash) as an override.
+# Prints "<shell>:<rc-path>" on success.
+detect_shell_rc() {
+  local sh="${CLAUDE_SWITCH_SHELL:-}"
+  if [[ -z "$sh" ]]; then
+    case "${SHELL:-}" in
+      */zsh)  sh=zsh ;;
+      */bash) sh=bash ;;
+      *)
+        err "Could not detect your shell from \$SHELL='${SHELL:-}'."
+        err "Set CLAUDE_SWITCH_SHELL=zsh or CLAUDE_SWITCH_SHELL=bash and re-run."
+        return 1 ;;
+    esac
+  fi
+  case "$sh" in
+    zsh)  printf "zsh:%s/.zshrc" "$HOME" ;;
+    # For bash, the aliases live in ~/.bashrc so they're visible in non-login
+    # interactive shells (VS Code terminal, tmux panes, etc.). setup.sh
+    # separately ensures ~/.bash_profile sources ~/.bashrc so login shells
+    # (Terminal.app, iTerm, ssh) pick them up too.
+    bash) printf "bash:%s/.bashrc" "$HOME" ;;
+    *)
+      err "Unsupported shell: $sh (supported: zsh, bash)"
+      return 1 ;;
+  esac
+}
+
 require_python3() {
   if ! command -v python3 >/dev/null 2>&1; then
     err "python3 not found on PATH."

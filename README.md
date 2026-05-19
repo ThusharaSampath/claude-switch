@@ -9,7 +9,7 @@ Note: There are many tools like this out there, but this is **less complex**, **
 ## Requirements
 
 - macOS
-- zsh
+- zsh or bash
 - Claude Code installed, logged into at least one account
 - Python 3 (preinstalled on macOS)
 
@@ -17,10 +17,14 @@ Note: There are many tools like this out there, but this is **less complex**, **
 
 ```bash
 ./setup.sh
-source ~/.zshrc
+# then, for your shell:
+source ~/.zshrc    # zsh
+source ~/.bashrc   # bash
 ```
 
-The script saves each account's OAuth token + identity to per-profile Keychain slots and installs aliases. Safe to re-run.
+The script saves each account's OAuth token + identity to per-profile Keychain slots and installs aliases into the rc file matching your shell (`$SHELL`): `~/.zshrc` for zsh, `~/.bashrc` for bash. Override detection with `CLAUDE_SWITCH_SHELL=zsh` or `CLAUDE_SWITCH_SHELL=bash` if needed. Safe to re-run.
+
+For bash on macOS, `~/.bashrc` isn't read by login shells (Terminal.app, iTerm, ssh) — only by non-login interactive shells like the VS Code terminal. If `~/.bash_profile` doesn't already source `~/.bashrc`, setup prompts you (press Enter) to append a managed source line so the aliases work everywhere.
 
 ## Aliases
 
@@ -58,7 +62,7 @@ Profiles are hardcoded as `personal` and `work`. To add or rename, edit `PROFILE
 ./clean.sh
 ```
 
-Removes the saved Keychain slots, snapshot files, and the managed block in `~/.zshrc`, then restores `~/.claude.json` from the pre-install backup. The currently-active login (`Claude Code-credentials`) is left alone, so you stay signed in.
+Removes the saved Keychain slots, snapshot files, and the managed block from `~/.zshrc` and/or `~/.bash_profile`, then restores `~/.claude.json` from the pre-install backup. The currently-active login (`Claude Code-credentials`) is left alone, so you stay signed in.
 
 Flags: `--yes` to skip the confirmation prompt, `--no-restore` to leave `~/.claude.json` as-is.
 
