@@ -16,11 +16,13 @@ After a one-time setup, swap accounts with a single shell alias — no `/logout`
 ```bash
 ./setup.sh
 # then, for your shell:
-source ~/.zshrc           # zsh
-source ~/.bash_profile    # bash
+source ~/.zshrc    # zsh
+source ~/.bashrc   # bash
 ```
 
-The script saves each account's OAuth token + identity to per-profile Keychain slots and installs aliases into the rc file matching your shell (`$SHELL`). Override with `CLAUDE_SWITCH_SHELL=zsh` or `CLAUDE_SWITCH_SHELL=bash` if needed. Safe to re-run.
+The script saves each account's OAuth token + identity to per-profile Keychain slots and installs aliases into the rc file matching your shell (`$SHELL`): `~/.zshrc` for zsh, `~/.bashrc` for bash. Override detection with `CLAUDE_SWITCH_SHELL=zsh` or `CLAUDE_SWITCH_SHELL=bash` if needed. Safe to re-run.
+
+For bash on macOS, `~/.bashrc` isn't read by login shells (Terminal.app, iTerm, ssh) — only by non-login interactive shells like the VS Code terminal. If `~/.bash_profile` doesn't already source `~/.bashrc`, setup prompts you (press Enter) to append a managed source line so the aliases work everywhere.
 
 ## Aliases
 

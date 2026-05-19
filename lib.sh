@@ -45,7 +45,11 @@ detect_shell_rc() {
   fi
   case "$sh" in
     zsh)  printf "zsh:%s/.zshrc" "$HOME" ;;
-    bash) printf "bash:%s/.bash_profile" "$HOME" ;;
+    # For bash, the aliases live in ~/.bashrc so they're visible in non-login
+    # interactive shells (VS Code terminal, tmux panes, etc.). setup.sh
+    # separately ensures ~/.bash_profile sources ~/.bashrc so login shells
+    # (Terminal.app, iTerm, ssh) pick them up too.
+    bash) printf "bash:%s/.bashrc" "$HOME" ;;
     *)
       err "Unsupported shell: $sh (supported: zsh, bash)"
       return 1 ;;

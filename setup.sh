@@ -227,6 +227,63 @@ $RC_END
 EOF
 }
 
+# For bash, the alias block lives in ~/.bashrc — but macOS login shells
+# (Terminal.app, iTerm, ssh) only read ~/.bash_profile and won't see it
+# unless ~/.bash_profile sources ~/.bashrc. Make sure that's wired up.
+ensure_bash_profile_sources_bashrc() {
+  [[ "$SHELL_KIND" == "bash" ]] || return 0
+
+  local bp="$HOME/.bash_profile"
+
+  step "Linking ~/.bash_profile → ~/.bashrc"
+
+  # If our own marker block is already in .bash_profile, we wrote it on a
+  # previous run — leave it alone (idempotent).
+  if [[ -f "$bp" ]] && grep -qF "$RC_BEGIN" "$bp" 2>/dev/null; then
+    info "claude-switch source block already present in $bp."
+    return 0
+  fi
+
+  # If .bash_profile already sources .bashrc by some non-comment line, the
+  # user has already wired it up — don't add a competing source line.
+  if [[ -f "$bp" ]] && grep -vE '^[[:space:]]*#' "$bp" | grep -qF '.bashrc'; then
+    ok "$bp already references ~/.bashrc — no change needed."
+    return 0
+  fi
+
+  cat <<EOF
+
+Login shells on macOS (Terminal.app, iTerm, ssh) read ~/.bash_profile but
+NOT ~/.bashrc. The claude-switch aliases just installed in ~/.bashrc won't
+be visible in those terminals unless ~/.bash_profile sources ~/.bashrc.
+
+claude-switch will append the following managed block to $bp
+(wrapped in claude-switch markers, removable by clean.sh):
+
+  ${C_CYN}[[ -r ~/.bashrc ]] && . ~/.bashrc${C_RST}
+
+EOF
+  read -r -p "Press Enter to append it (Ctrl+C to skip)... " _
+
+  # Backup .bash_profile before mutating it. RC_BAK already covers .bashrc,
+  # not .bash_profile, so we take a separate snapshot here.
+  local bp_bak="${bp}.pre-claude-switch.bak"
+  if [[ -f "$bp" && ! -f "$bp_bak" ]]; then
+    cp "$bp" "$bp_bak"
+    ok "Backed up $bp → $bp_bak"
+  fi
+
+  [[ -f "$bp" ]] || : > "$bp"
+  {
+    printf "\n%s\n" "$RC_BEGIN"
+    printf "%s\n" "# Added by claude-switch so login shells (Terminal.app/iTerm/ssh)"
+    printf "%s\n" "# pick up the aliases defined in ~/.bashrc."
+    printf "%s\n" "[[ -r ~/.bashrc ]] && . ~/.bashrc"
+    printf "%s\n" "$RC_END"
+  } >> "$bp"
+  ok "Appended source block to $bp"
+}
+
 install_rc() {
   step "Installing $SHELL_KIND aliases into $RC"
 
@@ -274,6 +331,7 @@ main() {
   take_backups
   setup_profiles
   install_rc
+  ensure_bash_profile_sources_bashrc
 
   step "Done"
   cat <<EOF
