@@ -4,6 +4,8 @@ Fast, non-interactive switching between multiple Claude Code accounts (e.g. pers
 
 After a one-time setup, swap accounts with a single shell alias — no `/logout`, no browser, no re-auth.
 
+Note: There are many tools like this out there, but this is **less complex**, **transparent** and **no npm install** [npm is risky these days ;)]
+
 ## Requirements
 
 - macOS
