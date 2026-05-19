@@ -7,7 +7,7 @@ After a one-time setup, swap accounts with a single shell alias — no `/logout`
 ## Requirements
 
 - macOS
-- zsh
+- zsh or bash
 - Claude Code installed, logged into at least one account
 - Python 3 (preinstalled on macOS)
 
@@ -15,10 +15,12 @@ After a one-time setup, swap accounts with a single shell alias — no `/logout`
 
 ```bash
 ./setup.sh
-source ~/.zshrc
+# then, for your shell:
+source ~/.zshrc           # zsh
+source ~/.bash_profile    # bash
 ```
 
-The script saves each account's OAuth token + identity to per-profile Keychain slots and installs aliases. Safe to re-run.
+The script saves each account's OAuth token + identity to per-profile Keychain slots and installs aliases into the rc file matching your shell (`$SHELL`). Override with `CLAUDE_SWITCH_SHELL=zsh` or `CLAUDE_SWITCH_SHELL=bash` if needed. Safe to re-run.
 
 ## Aliases
 
@@ -56,7 +58,7 @@ Profiles are hardcoded as `personal` and `work`. To add or rename, edit `PROFILE
 ./clean.sh
 ```
 
-Removes the saved Keychain slots, snapshot files, and the managed block in `~/.zshrc`, then restores `~/.claude.json` from the pre-install backup. The currently-active login (`Claude Code-credentials`) is left alone, so you stay signed in.
+Removes the saved Keychain slots, snapshot files, and the managed block from `~/.zshrc` and/or `~/.bash_profile`, then restores `~/.claude.json` from the pre-install backup. The currently-active login (`Claude Code-credentials`) is left alone, so you stay signed in.
 
 Flags: `--yes` to skip the confirmation prompt, `--no-restore` to leave `~/.claude.json` as-is.
 

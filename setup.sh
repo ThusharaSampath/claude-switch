@@ -4,13 +4,13 @@
 # What this does:
 #   1. Saves the currently-active OAuth token to a per-profile Keychain slot.
 #   2. Loops you through /logout + /login for any unsaved profiles.
-#   3. Installs zshrc aliases:
+#   3. Installs shell aliases (zsh -> ~/.zshrc, bash -> ~/.bash_profile):
 #        claude-personal / claude-work  - swap token AND launch claude
 #        ccs-personal    / ccs-work     - swap token only (mid-air switch)
 #        ccs-status / ccs-list          - status helpers
 #
 # Idempotent: re-run safely, it skips already-saved slots and doesn't duplicate
-# zshrc entries.
+# rc entries. Shell auto-detected from $SHELL (override: CLAUDE_SWITCH_SHELL).
 
 set -euo pipefail
 
@@ -19,14 +19,18 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$SCRIPT_DIR/lib.sh"
 
 PROFILES=("personal" "work")
-ZSHRC="${ZSHRC:-$HOME/.zshrc}"
-ZSHRC_BEGIN="# >>> claude-switch >>>"
-ZSHRC_END="# <<< claude-switch <<<"
-ZSHRC_BAK="${ZSHRC}.pre-claude-switch.bak"
-CLAUDE_JSON_BAK="${CLAUDE_JSON}.pre-claude-switch.bak"
 
 require_macos
 require_python3
+
+# Detect which shell rc file to manage.
+SHELL_RC="$(detect_shell_rc)" || exit 1
+SHELL_KIND="${SHELL_RC%%:*}"
+RC="${SHELL_RC#*:}"
+RC_BEGIN="# >>> claude-switch >>>"
+RC_END="# <<< claude-switch <<<"
+RC_BAK="${RC}.pre-claude-switch.bak"
+CLAUDE_JSON_BAK="${CLAUDE_JSON}.pre-claude-switch.bak"
 
 # ----------------------------------------------------------------------------
 # Step 0: take one-shot backups of files we'll modify, so clean.sh can revert.
@@ -34,11 +38,11 @@ require_python3
 
 take_backups() {
   step "Pre-install backups"
-  if [[ -f "$ZSHRC" && ! -f "$ZSHRC_BAK" ]]; then
-    cp "$ZSHRC" "$ZSHRC_BAK"
-    ok "Backed up $ZSHRC → $ZSHRC_BAK"
-  elif [[ -f "$ZSHRC_BAK" ]]; then
-    info "$ZSHRC_BAK already exists, keeping original backup."
+  if [[ -f "$RC" && ! -f "$RC_BAK" ]]; then
+    cp "$RC" "$RC_BAK"
+    ok "Backed up $RC → $RC_BAK"
+  elif [[ -f "$RC_BAK" ]]; then
+    info "$RC_BAK already exists, keeping original backup."
   fi
 
   if [[ -f "$CLAUDE_JSON" && ! -f "$CLAUDE_JSON_BAK" ]]; then
@@ -162,12 +166,12 @@ EOF
 }
 
 # ----------------------------------------------------------------------------
-# Step 2: install zshrc aliases.
+# Step 2: install shell rc aliases.
 # ----------------------------------------------------------------------------
 
-zshrc_block() {
+rc_block() {
   cat <<EOF
-$ZSHRC_BEGIN
+$RC_BEGIN
 # Managed by claude-switch ($SCRIPT_DIR). Do not edit between markers.
 export CLAUDE_SWITCH_DIR="$SCRIPT_DIR"
 
@@ -219,42 +223,42 @@ _claude_switch() {
 }
 alias claude-personal='_claude_switch personal'
 alias claude-work='_claude_switch work'
-$ZSHRC_END
+$RC_END
 EOF
 }
 
-install_zshrc() {
-  step "Installing zshrc aliases"
+install_rc() {
+  step "Installing $SHELL_KIND aliases into $RC"
 
-  if [[ ! -f "$ZSHRC" ]]; then
-    warn "$ZSHRC does not exist; creating it."
-    : > "$ZSHRC"
+  if [[ ! -f "$RC" ]]; then
+    warn "$RC does not exist; creating it."
+    : > "$RC"
   fi
 
-  local new_block; new_block=$(zshrc_block)
+  local new_block; new_block=$(rc_block)
 
-  if grep -qF "$ZSHRC_BEGIN" "$ZSHRC"; then
+  if grep -qF "$RC_BEGIN" "$RC"; then
     # Replace existing managed block
-    local tmp; tmp=$(mktemp "${TMPDIR:-/tmp}/zshrc.XXXXXX")
-    awk -v B="$ZSHRC_BEGIN" -v E="$ZSHRC_END" '
+    local tmp; tmp=$(mktemp "${TMPDIR:-/tmp}/claude-switch-rc.XXXXXX")
+    awk -v B="$RC_BEGIN" -v E="$RC_END" '
       $0 == B { skip=1 }
       !skip   { print }
       $0 == E { skip=0 }
-    ' "$ZSHRC" > "$tmp"
+    ' "$RC" > "$tmp"
     printf "\n%s\n" "$new_block" >> "$tmp"
-    mv "$tmp" "$ZSHRC"
-    ok "Replaced existing claude-switch block in $ZSHRC"
+    mv "$tmp" "$RC"
+    ok "Replaced existing claude-switch block in $RC"
   else
     {
       printf "\n"
       printf "%s\n" "$new_block"
-    } >> "$ZSHRC"
-    ok "Appended claude-switch block to $ZSHRC"
+    } >> "$RC"
+    ok "Appended claude-switch block to $RC"
   fi
 
   info ""
   info "Reload your shell to pick up new aliases:"
-  info "  ${C_CYN}source $ZSHRC${C_RST}"
+  info "  ${C_CYN}source $RC${C_RST}"
 }
 
 # ----------------------------------------------------------------------------
@@ -265,14 +269,15 @@ main() {
   step "claude-switch setup"
   info "Profile slots will be stored in macOS Keychain as 'Claude Code-<profile>'."
   info "Configured profiles: ${PROFILES[*]}"
+  info "Detected shell: ${C_CYN}$SHELL_KIND${C_RST} (rc file: $RC)"
 
   take_backups
   setup_profiles
-  install_zshrc
+  install_rc
 
   step "Done"
   cat <<EOF
-Aliases available after ${C_CYN}source $ZSHRC${C_RST}:
+Aliases available after ${C_CYN}source $RC${C_RST}:
 
   ${C_CYN}claude-personal${C_RST}   Launch claude as personal (swaps token + launches)
   ${C_CYN}claude-work${C_RST}       Launch claude as work     (swaps token + launches)

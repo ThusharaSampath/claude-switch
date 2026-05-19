@@ -17,10 +17,21 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$SCRIPT_DIR/lib.sh"
 
 PROFILES=("personal" "work")
-ZSHRC="${ZSHRC:-$HOME/.zshrc}"
-ZSHRC_BEGIN="# >>> claude-switch >>>"
-ZSHRC_END="# <<< claude-switch <<<"
-ZSHRC_BAK="${ZSHRC}.pre-claude-switch.bak"
+RC_BEGIN="# >>> claude-switch >>>"
+RC_END="# <<< claude-switch <<<"
+# Setup writes the managed block into ~/.zshrc (zsh) or ~/.bash_profile
+# (bash), but a user may have switched shells between install and uninstall,
+# or moved the block into a different rc file by hand. Scan every common
+# shell startup file on macOS — we only remove blocks that carry our marker,
+# so extra candidates can't trigger false positives.
+RC_CANDIDATES=(
+  "$HOME/.zshrc"
+  "$HOME/.zprofile"
+  "$HOME/.zshenv"
+  "$HOME/.bash_profile"
+  "$HOME/.bashrc"
+  "$HOME/.profile"
+)
 CLAUDE_JSON_BAK="${CLAUDE_JSON}.pre-claude-switch.bak"
 
 ASSUME_YES=0
@@ -35,7 +46,7 @@ Usage: $(basename "$0") [--yes|-y] [--no-restore] [--help]
 Removes everything claude-switch created:
   - Keychain slots: Claude Code-personal, Claude Code-work
   - Snapshot dir: $SNAPSHOT_DIR
-  - Managed block in $ZSHRC
+  - Managed block in any of: ${RC_CANDIDATES[*]}
 
 And, unless --no-restore, restores:
   - $CLAUDE_JSON from $CLAUDE_JSON_BAK
@@ -78,11 +89,21 @@ else
   echo "  ${C_DIM}skip${C_RST}      Snapshot dir: $SNAPSHOT_DIR ${C_DIM}(absent)${C_RST}"
 fi
 
-# zshrc block
-if [[ -f "$ZSHRC" ]] && grep -qF "$ZSHRC_BEGIN" "$ZSHRC" 2>/dev/null; then
-  echo "  ${C_RED}remove${C_RST}    Managed block in: $ZSHRC"
-else
-  echo "  ${C_DIM}skip${C_RST}      Managed block in: $ZSHRC ${C_DIM}(absent)${C_RST}"
+# rc blocks — check every candidate, but only mention files that have the
+# marker. Absent files would just be noise across 6 candidates.
+any_rc_match=0
+for rc in "${RC_CANDIDATES[@]}"; do
+  if [[ -f "$rc" ]] && grep -qF "$RC_BEGIN" "$rc" 2>/dev/null; then
+    echo "  ${C_RED}remove${C_RST}    Managed block in: $rc"
+    rc_bak="${rc}.pre-claude-switch.bak"
+    if [[ -f "$rc_bak" ]]; then
+      echo "  ${C_DIM}note${C_RST}      pre-install backup at: $rc_bak"
+    fi
+    any_rc_match=1
+  fi
+done
+if (( ! any_rc_match )); then
+  echo "  ${C_DIM}skip${C_RST}      Managed block in shell rc files ${C_DIM}(none found)${C_RST}"
 fi
 
 # claude.json restore
@@ -101,7 +122,7 @@ echo
 echo "${C_DIM}Not touched:${C_RST}"
 echo "  - Keychain slot: Claude Code-credentials (your active login stays)"
 echo "  - ~/.claude/ (settings, history, plugins, memory, etc.)"
-echo "  - $ZSHRC_BAK (left as a safety copy)"
+echo "  - pre-install backups (*.pre-claude-switch.bak — left as safety copies)"
 
 # ----------------------------------------------------------------------------
 # Confirm
@@ -136,17 +157,21 @@ if [[ -d "$SNAPSHOT_DIR" ]]; then
   rm -rf -- "$SNAPSHOT_DIR" && ok "Removed $SNAPSHOT_DIR"
 fi
 
-# zshrc block
-if [[ -f "$ZSHRC" ]] && grep -qF "$ZSHRC_BEGIN" "$ZSHRC" 2>/dev/null; then
-  tmp=$(mktemp "${TMPDIR:-/tmp}/zshrc.XXXXXX")
-  awk -v B="$ZSHRC_BEGIN" -v E="$ZSHRC_END" '
-    $0 == B { skip=1; next }
-    $0 == E { skip=0; next }
-    !skip   { print }
-  ' "$ZSHRC" > "$tmp"
-  mv "$tmp" "$ZSHRC"
-  ok "Removed managed block from $ZSHRC"
-fi
+# rc blocks (zshrc and/or bash_profile)
+REMOVED_FROM=()
+for rc in "${RC_CANDIDATES[@]}"; do
+  if [[ -f "$rc" ]] && grep -qF "$RC_BEGIN" "$rc" 2>/dev/null; then
+    tmp=$(mktemp "${TMPDIR:-/tmp}/claude-switch-rc.XXXXXX")
+    awk -v B="$RC_BEGIN" -v E="$RC_END" '
+      $0 == B { skip=1; next }
+      $0 == E { skip=0; next }
+      !skip   { print }
+    ' "$rc" > "$tmp"
+    mv "$tmp" "$rc"
+    ok "Removed managed block from $rc"
+    REMOVED_FROM+=("$rc")
+  fi
+done
 
 # Restore claude.json
 if (( DO_RESTORE_JSON )) && [[ -f "$CLAUDE_JSON_BAK" ]]; then
@@ -154,11 +179,19 @@ if (( DO_RESTORE_JSON )) && [[ -f "$CLAUDE_JSON_BAK" ]]; then
 fi
 
 step "Done"
-cat <<EOF
-Reload your shell to clear the aliases:
-  ${C_CYN}source $ZSHRC${C_RST}    (or open a new terminal)
+echo "Reload your shell to clear the aliases (or open a new terminal):"
+if (( ${#REMOVED_FROM[@]} )); then
+  for rc in "${REMOVED_FROM[@]}"; do
+    echo "  ${C_CYN}source $rc${C_RST}"
+  done
+else
+  echo "  (no rc files were modified)"
+fi
 
-If you don't want the backups anymore:
-  rm "$ZSHRC_BAK"
-  rm "$CLAUDE_JSON_BAK"
-EOF
+echo
+echo "If you don't want the backups anymore:"
+for rc in "${RC_CANDIDATES[@]}"; do
+  rc_bak="${rc}.pre-claude-switch.bak"
+  [[ -f "$rc_bak" ]] && echo "  rm \"$rc_bak\""
+done
+[[ -f "$CLAUDE_JSON_BAK" ]] && echo "  rm \"$CLAUDE_JSON_BAK\""
